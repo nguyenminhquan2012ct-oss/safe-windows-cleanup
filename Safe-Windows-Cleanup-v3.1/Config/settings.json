@@ -1,0 +1,8 @@
+{
+  "UseColor": true,
+  "AsciiFallback": false,
+  "KeepLogsDays": 30,
+  "DefaultTempAgeDays": 2,
+  "DefaultLogAgeDays": 30,
+  "AutoRestorePoint": true
+}
