@@ -1,0 +1,7 @@
+*.log
+*.tmp
+*.download
+src/Logs/*.txt
+src/Reports/*.json
+.vscode/
+.idea/

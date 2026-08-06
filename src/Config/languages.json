@@ -1,0 +1,4 @@
+{
+  "default": "vi",
+  "supported": ["vi", "en"]
+}

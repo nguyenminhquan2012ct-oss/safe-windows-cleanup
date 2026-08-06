@@ -1,0 +1,11 @@
+{
+  "items": [
+    {"id":1,"key":"quick-cleanup","enabled":true},
+    {"id":2,"key":"custom-cleanup","enabled":true},
+    {"id":3,"key":"bloatware","enabled":true},
+    {"id":4,"key":"windows-update","enabled":true},
+    {"id":5,"key":"repair","enabled":true},
+    {"id":6,"key":"reports","enabled":true},
+    {"id":7,"key":"settings","enabled":true}
+  ]
+}
