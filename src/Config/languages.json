@@ -1,4 +1,15 @@
 {
   "default": "vi",
-  "supported": ["vi", "en"]
+  "supported": [
+    "vi",
+    "en"
+  ],
+  "names": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "description": {
+    "vi": "Giao diện và tài liệu tiếng Việt.",
+    "en": "English interface and documentation."
+  }
 }

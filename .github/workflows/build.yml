@@ -1,4 +1,5 @@
 name: Build
+
 on:
   push:
     branches: [main]
@@ -13,15 +14,19 @@ jobs:
       - name: PowerShell parser check
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "src/Safe-Windows-Cleanup.ps1",
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | Format-List | Out-String | Write-Host
-            exit 1
+          $files = @("bootstrap.ps1", "src/Safe-Windows-Cleanup.ps1")
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "Parser errors in $file"
+              $errors | Format-List | Out-String | Write-Host
+              exit 1
+            }
           }
-          Write-Host "Parser check passed."
+          Write-Host "Parser checks passed."

@@ -6,10 +6,10 @@ param(
 
 <#[CmdletBinding()]
 .SYNOPSIS
-    Safe Windows Cleanup v3.0 - TUI an toàn cho Windows 10/11.
+    Safe Windows Cleanup v4.0.1 - TUI song ngữ an toàn cho Windows 10/11.
 
 .DESCRIPTION
-    v3.0 chuyển từ kiểu tham số dòng lệnh sang giao diện TUI tương tác.
+    v4.0 sử dụng giao diện TUI song ngữ, nhận ngôn ngữ từ bootstrap và giữ engine an toàn từ v3.x.
     - Mặc định chỉ QUÉT/DRY-RUN; không xóa thật khi chưa xác nhận.
     - Có menu Quick Cleanup, Custom Cleanup, Bloatware, Windows Update, Repair, Reports, Settings.
     - Không đi theo junction/symlink/reparse point.
@@ -19,7 +19,7 @@ param(
     - Ghi log TXT và report JSON.
 
 .NOTES
-    Version: 3.1.0
+    Version: 4.0.1
     Target: Windows 10/11 Desktop
     Engine: Windows PowerShell 5.1
 #>
@@ -32,13 +32,14 @@ $ErrorActionPreference = 'Stop'
 # ============================================================
 
 $script:AppName = 'Safe Windows Cleanup'
-$script:ScriptVersion = '3.1.0'
+$script:ScriptVersion = '4.0.1'
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $script:ConfigDirectory = Join-Path $script:ScriptRoot 'Config'
 $script:ReportsDirectory = Join-Path $script:ScriptRoot 'Reports'
 $script:LogsDirectory = Join-Path $script:ScriptRoot 'Logs'
 $script:ConfigPath = Join-Path $script:ConfigDirectory 'settings.json'
-$script:BloatwarePath = Join-Path $script:ConfigDirectory 'bloatware-list.json'
+$script:BloatwarePath = Join-Path $script:ConfigDirectory 'bloatware.json'
+$script:LegacyBloatwarePath = Join-Path $script:ConfigDirectory 'bloatware-list.json'
 $script:SessionSkippedLinks = 0
 $script:SessionStarted = Get-Date
 $script:LogPath = $null
@@ -48,6 +49,315 @@ $script:AsciiFallback = $false
 $script:OriginalWindowTitle = $host.UI.RawUI.WindowTitle
 $script:Settings = $null
 $script:Language = $Language
+
+# ============================================================
+# LOCALIZATION
+# The bootstrap passes -Language vi or -Language en.
+# All user-facing UI and log text is translated here so the
+# cleanup engine remains a single self-contained file.
+# ============================================================
+
+$script:LocalizationPairs = @(
+    @{ Vi='Safe Windows Cleanup'; En='Safe Windows Cleanup' }
+    @{ Vi='Tiếng Việt'; En='English' }
+    @{ Vi='Phiên bản'; En='Version' }
+    @{ Vi='Chế độ'; En='Mode' }
+    @{ Vi='Trống C'; En='Free C' }
+    @{ Vi='Điểm khôi phục'; En='Restore Point' }
+    @{ Vi='Có sẵn'; En='Available' }
+    @{ Vi='Không tìm thấy'; En='Not found' }
+    @{ Vi='Không khả dụng'; En='Unavailable' }
+    @{ Vi='Không xác định'; En='Unknown' }
+    @{ Vi='Không có'; En='N/A' }
+
+    @{ Vi='Chạy thử'; En='DRY-RUN' }
+    @{ Vi='Dọn thật'; En='EXECUTE' }
+    @{ Vi='Gỡ ứng dụng'; En='APP-UNINSTALL' }
+
+    @{ Vi='Dọn dẹp nhanh'; En='Quick Cleanup' }
+    @{ Vi='Dọn dẹp tùy chỉnh'; En='Custom Cleanup' }
+    @{ Vi='Gỡ ứng dụng rác / Trình gỡ ứng dụng'; En='Bloatware / App Uninstaller' }
+    @{ Vi='Dọn dẹp Windows Update & Thành phần hệ thống'; En='Windows Update & Component Cleanup' }
+    @{ Vi='Công cụ sửa chữa hệ thống'; En='System Repair Tools' }
+    @{ Vi='Báo cáo & Nhật ký'; En='Reports & Logs' }
+    @{ Vi='Cài đặt'; En='Settings' }
+    @{ Vi='Thoát'; En='Exit' }
+
+    @{ Vi='KẾT QUẢ QUÉT'; En='SCAN RESULTS' }
+    @{ Vi='QUÉT NHANH'; En='QUICK CLEANUP' }
+    @{ Vi='DỌN DẸP TÙY CHỈNH'; En='CUSTOM CLEANUP' }
+    @{ Vi='GỠ ỨNG DỤNG RÁC / TRÌNH GỠ ỨNG DỤNG'; En='BLOATWARE / APP UNINSTALLER' }
+    @{ Vi='GỠ ỨNG DỤNG RÁC'; En='BLOATWARE' }
+    @{ Vi='XÁC NHẬN GỠ ỨNG DỤNG'; En='CONFIRM APP UNINSTALL' }
+    @{ Vi='GỠ ỨNG DỤNG HOÀN TẤT'; En='APP UNINSTALL COMPLETE' }
+    @{ Vi='DỌN DẸP HOÀN TẤT'; En='CLEANUP COMPLETE' }
+    @{ Vi='DỌN DẸP WINDOWS UPDATE & THÀNH PHẦN HỆ THỐNG'; En='WINDOWS UPDATE & COMPONENT CLEANUP' }
+    @{ Vi='PHÂN TÍCH COMPONENT STORE'; En='ANALYZE COMPONENT STORE' }
+    @{ Vi='CACHE TẢI WINDOWS UPDATE - DỌN SÂU'; En='WINDOWS UPDATE DOWNLOAD CACHE - DEEP' }
+    @{ Vi='CACHE TẢI WINDOWS UPDATE'; En='WINDOWS UPDATE DOWNLOAD CACHE' }
+    @{ Vi='CÔNG CỤ SỬA CHỮA HỆ THỐNG'; En='SYSTEM REPAIR TOOLS' }
+    @{ Vi='BÁO CÁO & NHẬT KÝ'; En='REPORTS & LOGS' }
+    @{ Vi='CÀI ĐẶT'; En='SETTINGS' }
+
+    @{ Vi='Chọn mục'; En='Select items' }
+    @{ Vi='Chọn số hoặc dùng mũi tên + Enter: '; En='Choose a number or use arrows + Enter: ' }
+    @{ Vi='Nhấn phím bất kỳ để quay lại...'; En='Press any key to go back...' }
+    @{ Vi='↑↓ di chuyển | Space chọn | A tất cả | N bỏ chọn | Enter xác nhận | Esc quay lại'; En='↑↓ move | Space select | A all | N clear | Enter confirm | Esc back' }
+    @{ Vi='↑↓ | Space chọn | A tất cả | N bỏ chọn | Enter xác nhận | Esc hủy'; En='↑↓ | Space select | A all | N clear | Enter confirm | Esc cancel' }
+
+    @{ Vi='Dọn dẹp nhanh'; En='Quick Cleanup' }
+    @{ Vi='Đặt trước an toàn: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.'; En='Safe preset: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.' }
+    @{ Vi='Preset an toàn: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.'; En='Safe preset: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.' }
+    @{ Vi='Xem trước (Chạy thử)'; En='Preview (Dry-Run)' }
+    @{ Vi='Dọn thật'; En='Execute cleanup' }
+    @{ Vi='Chạy thử'; En='Dry-Run' }
+    @{ Vi='Thực thi'; En='Execute' }
+    @{ Vi='Quay lại'; En='Back' }
+
+    @{ Vi='TEMP người dùng hiện tại'; En='Current user TEMP' }
+    @{ Vi='Windows TEMP'; En='Windows TEMP' }
+    @{ Vi='DirectX Shader Cache'; En='DirectX Shader Cache' }
+    @{ Vi='Windows Internet/WebView Cache cũ'; En='Old Windows Internet/WebView Cache' }
+    @{ Vi='Windows Error Reporting - Archive'; En='Windows Error Reporting - Archive' }
+    @{ Vi='Windows Error Reporting - Queue'; En='Windows Error Reporting - Queue' }
+    @{ Vi='Crash Dumps người dùng'; En='User Crash Dumps' }
+    @{ Vi='CBS logs cũ'; En='Old CBS logs' }
+    @{ Vi='DISM logs cũ'; En='Old DISM logs' }
+    @{ Vi='Windows Prefetch'; En='Windows Prefetch' }
+    @{ Vi='Windows Update Download Cache'; En='Windows Update Download Cache' }
+    @{ Vi='Delivery Optimization Cache'; En='Delivery Optimization Cache' }
+    @{ Vi='Dọn dẹp Component Store bằng DISM'; En='DISM Component Store Cleanup' }
+    @{ Vi='Dọn trống Thùng rác'; En='Empty Recycle Bin' }
+    @{ Vi='Windows quản lý'; En='Windows managed' }
+    @{ Vi='Chưa quét'; En='Not scanned' }
+    @{ Vi='Quét'; En='scan' }
+
+    @{ Vi='Thấp'; En='LOW' }
+    @{ Vi='Trung bình'; En='MEDIUM' }
+    @{ Vi='Cao'; En='HIGH' }
+
+    @{ Vi='TỔNG: '; En='TOTAL: ' }
+    @{ Vi='Đã bỏ qua reparse point/junction/symlink: '; En='Skipped reparse point/junction/symlink: ' }
+    @{ Vi='File đã xóa: '; En='Files removed: ' }
+    @{ Vi='Dung lượng file đã xóa: '; En='Removed file size: ' }
+    @{ Vi='File lỗi/bị khóa: '; En='Failed/locked files: ' }
+    @{ Vi='Thay đổi dung lượng trống đo được: '; En='Measured free-space change: ' }
+    @{ Vi='Đã xóa: '; En='Removed: ' }
+    @{ Vi='Thất bại: '; En='Failed: ' }
+    @{ Vi='Đã chọn '; En='Selected ' }
+    @{ Vi=' mục.'; En=' item(s).' }
+    @{ Vi=' ứng dụng. Phạm vi: '; En=' application(s). Scope: ' }
+    @{ Vi='Đã chọn {0} mục.'; En='Selected {0} item(s).' }
+
+    @{ Vi='THẤP'; En='LOW' }
+    @{ Vi='TRUNG BÌNH'; En='MEDIUM' }
+    @{ Vi='CAO'; En='HIGH' }
+
+    @{ Vi='Không có dữ liệu quét.'; En='No scan data.' }
+    @{ Vi='Đang quét, vui lòng chờ...'; En='Scanning, please wait...' }
+    @{ Vi='Đang dọn dẹp...'; En='Cleaning up...' }
+    @{ Vi='DRY-RUN: chưa có dữ liệu nào bị xóa.'; En='DRY-RUN: no data was deleted.' }
+    @{ Vi='Các tác vụ hệ thống đã chọn:'; En='Selected system tasks:' }
+    @{ Vi='Người dùng hủy thao tác dọn dẹp.'; En='Cleanup operation was cancelled by the user.' }
+    @{ Vi='Không có mục nào được chọn.'; En='No items selected.' }
+    @{ Vi='Bạn chưa chọn mục nào.'; En='You have not selected any items.' }
+
+    @{ Vi='Không tìm thấy Clear-RecycleBin; bỏ qua Recycle Bin.'; En='Clear-RecycleBin was not found; skipping Recycle Bin.' }
+    @{ Vi='DRY-RUN: sẽ làm trống Recycle Bin của tài khoản hiện tại.'; En='DRY-RUN: Recycle Bin for the current user would be emptied.' }
+    @{ Vi='Đã làm trống Recycle Bin.'; En='Recycle Bin emptied.' }
+    @{ Vi='Không tìm thấy Delete-DeliveryOptimizationCache; bỏ qua.'; En='Delete-DeliveryOptimizationCache was not found; skipping.' }
+    @{ Vi='DRY-RUN: sẽ chạy Delete-DeliveryOptimizationCache -Force.'; En='DRY-RUN: would run Delete-DeliveryOptimizationCache -Force.' }
+    @{ Vi='Đã yêu cầu Windows dọn Delivery Optimization cache.'; En='Windows was asked to clean the Delivery Optimization cache.' }
+    @{ Vi='Đang chạy DISM Component Cleanup...'; En='Running DISM Component Cleanup...' }
+    @{ Vi='DISM Component Cleanup hoàn tất.'; En='DISM Component Cleanup completed.' }
+    @{ Vi='Windows Update Download Cache không có file phù hợp để xóa.'; En='No matching files were found in Windows Update Download Cache.' }
+    @{ Vi='DRY-RUN: sẽ tạm dừng BITS và Windows Update để xóa Download Cache.'; En='DRY-RUN: BITS and Windows Update would be paused to clean Download Cache.' }
+
+    @{ Vi='Không tìm thấy DISM.'; En='DISM was not found.' }
+    @{ Vi='Đang phân tích...'; En='Analyzing...' }
+    @{ Vi='Đang chạy: '; En='Running: ' }
+    @{ Vi='Hoàn tất. Mã thoát: '; En='Completed. Exit code: ' }
+    @{ Vi='Lệnh kết thúc với mã thoát: '; En='Command finished with exit code: ' }
+    @{ Vi='Lỗi: '; En='Error: ' }
+
+    @{ Vi='Auto Restore Point đang tắt. Vẫn tiếp tục gỡ app?'; En='Automatic Restore Point creation is disabled. Continue uninstalling apps?' }
+    @{ Vi='Đã tìm thấy Restore Point trong 24 giờ gần nhất.'; En='A Restore Point from within the last 24 hours was found.' }
+    @{ Vi='Không có Restore Point đủ mới; hủy gỡ ứng dụng.'; En='No recent Restore Point was found; application uninstall was cancelled.' }
+    @{ Vi='Không tìm thấy Appx nào trong allowlist có thể gỡ.'; En='No removable Appx packages from the allowlist were found.' }
+    @{ Vi='Chỉ tài khoản hiện tại'; En='Current user only' }
+    @{ Vi='Tất cả tài khoản (All Users)'; En='All users' }
+    @{ Vi='Tất cả tài khoản'; En='All users' }
+    @{ Vi='Tài khoản hiện tại'; En='Current user' }
+    @{ Vi='Restore Point sẽ được tạo trước khi gỡ.'; En='A Restore Point will be created before uninstalling apps.' }
+    @{ Vi='Tiếp tục gỡ các ứng dụng đã chọn?'; En='Continue uninstalling the selected applications?' }
+    @{ Vi='CHỌN ỨNG DỤNG ĐỂ GỠ'; En='SELECT APPLICATIONS TO UNINSTALL' }
+
+    @{ Vi='Phân tích Component Store (DISM /AnalyzeComponentStore)'; En='Analyze Component Store (DISM /AnalyzeComponentStore)' }
+    @{ Vi='Dọn Component Store (DISM /StartComponentCleanup)'; En='Clean Component Store (DISM /StartComponentCleanup)' }
+    @{ Vi='Dọn Delivery Optimization Cache'; En='Clean Delivery Optimization Cache' }
+    @{ Vi='Dọn Windows Update Download Cache (SÂU)'; En='Clean Windows Update Download Cache (DEEP)' }
+
+    @{ Vi='CẢNH BÁO: các bản cập nhật đã tải nhưng chưa cài có thể phải tải lại.'; En='WARNING: downloaded updates that are not installed may need to be downloaded again.' }
+    @{ Vi='Dịch vụ BITS và Windows Update sẽ được dừng tạm thời.'; En='BITS and Windows Update services will be temporarily stopped.' }
+    @{ Vi='Tiếp tục dọn cache sâu?'; En='Continue deep cache cleanup?' }
+    @{ Vi='Đang phân tích'; En='Analyzing' }
+
+    @{ Vi='DISM /CheckHealth'; En='DISM /CheckHealth' }
+    @{ Vi='DISM /ScanHealth'; En='DISM /ScanHealth' }
+    @{ Vi='DISM /RestoreHealth'; En='DISM /RestoreHealth' }
+    @{ Vi='SFC /Scannow'; En='SFC /Scannow' }
+    @{ Vi='CHKDSK /Scan'; En='CHKDSK /Scan' }
+    @{ Vi='Xóa bộ nhớ đệm DNS'; En='Flush DNS Cache' }
+    @{ Vi='Đặt lại bộ nhớ đệm Microsoft Store'; En='Reset Microsoft Store Cache' }
+    @{ Vi='Đã xóa bộ nhớ đệm DNS.'; En='DNS cache flushed.' }
+
+    @{ Vi='Nhật ký gần nhất: '; En='Recent logs: ' }
+    @{ Vi='Báo cáo JSON gần nhất: '; En='Recent JSON reports: ' }
+    @{ Vi='Mở thư mục Logs'; En='Open Logs folder' }
+    @{ Vi='Mở thư mục Reports'; En='Open Reports folder' }
+    @{ Vi='Mở nhật ký mới nhất'; En='Open latest log' }
+
+    @{ Vi='Bật màu'; En='Use colors' }
+    @{ Vi='Chế độ ASCII dự phòng'; En='ASCII fallback' }
+    @{ Vi='Số ngày giữ nhật ký'; En='Log retention days' }
+    @{ Vi='Tuổi file TEMP mặc định'; En='Default TEMP file age' }
+    @{ Vi='Tuổi log mặc định'; En='Default log age' }
+    @{ Vi='Tự động tạo Restore Point'; En='Automatic Restore Point' }
+    @{ Vi='Ngôn ngữ'; En='Language' }
+    @{ Vi='Lưu cấu hình'; En='Save configuration' }
+    @{ Vi='Đặt lại mặc định'; En='Reset defaults' }
+    @{ Vi='Nhập số ngày giữ log'; En='Enter log retention days' }
+    @{ Vi='Nhập tuổi file TEMP (ngày)'; En='Enter TEMP file age (days)' }
+    @{ Vi='Nhập tuổi log (ngày)'; En='Enter log age (days)' }
+    @{ Vi='Đã lưu cấu hình.'; En='Configuration saved.' }
+    @{ Vi='Đã reset cấu hình mặc định. Nhấn phím bất kỳ...'; En='Default settings restored. Press any key...' }
+
+    @{ Vi='Chỉ hỗ trợ Windows.'; En='Windows is required.' }
+    @{ Vi='Hãy chạy bằng Windows PowerShell 5.1.'; En='Run this tool with Windows PowerShell 5.1.' }
+    @{ Vi='Hãy chạy bằng quyền Administrator.'; En='Run this tool as Administrator.' }
+    @{ Vi='Chỉ hỗ trợ Windows 10/11 Desktop.'; En='Only Windows 10/11 Desktop is supported.' }
+    @{ Vi='Đã xảy ra lỗi. Xem log để biết chi tiết.'; En='An error occurred. Check the log for details.' }
+
+    @{ Vi='Vui lòng xác nhận'; En='Please confirm' }
+    @{ Vi='Bạn muốn chuyển sang chế độ XÓA THẬT?'; En='Do you want to switch to REAL CLEANUP mode?' }
+    @{ Vi='XÁC NHẬN: chạy Custom Cleanup ở chế độ XÓA THẬT?'; En='CONFIRM: run Custom Cleanup in REAL CLEANUP mode?' }
+    @{ Vi='Chạy DISM StartComponentCleanup?'; En='Run DISM StartComponentCleanup?' }
+    @{ Vi='DISM RestoreHealth có thể mất thời gian. Tiếp tục?'; En='DISM RestoreHealth may take some time. Continue?' }
+    @{ Vi='SFC /Scannow sẽ kiểm tra file hệ thống. Tiếp tục?'; En='SFC /Scannow will check system files. Continue?' }
+    @{ Vi='XÁC NHẬN GỠ APP'; En='CONFIRM APP UNINSTALL' }
+
+    @{ Vi='[Y/N, mặc định {0}]'; En='[Y/N, default {0}]' }
+    @{ Vi='[1] Xem trước (Dry-Run)'; En='[1] Preview (Dry-Run)' }
+    @{ Vi='[2] Dọn thật'; En='[2] Execute cleanup' }
+    @{ Vi='[1] Chạy thử'; En='[1] Dry-Run' }
+    @{ Vi='[2] Thực thi'; En='[2] Execute' }
+    @{ Vi='[0] Quay lại'; En='[0] Back' }
+    @{ Vi='[0] Thoát'; En='[0] Exit' }
+
+    @{ Vi='Lựa chọn không hợp lệ.'; En='Invalid selection.' }
+    @{ Vi='Vui lòng nhập Y hoặc N.'; En='Please enter Y or N.' }
+
+    @{ Vi='Mode: '; En='Mode: ' }
+    @{ Vi='Free C: '; En='Free C: ' }
+    @{ Vi='Restore Point: '; En='Restore Point: ' }
+    @{ Vi='[X]'; En='[X]' }
+    @{ Vi='[ ]'; En='[ ]' }
+    @{ Vi='DRY-RUN: '; En='DRY-RUN: ' }
+    @{ Vi='Đang chạy DISM Component Cleanup...'; En='Running DISM Component Cleanup...' }
+    @{ Vi='Đã yêu cầu Windows dọn Delivery Optimization cache.'; En='Windows was asked to clean the Delivery Optimization cache.' }
+    @{ Vi='Lưu cấu hình'; En='Save configuration' }
+    @{ Vi='Đặt lại mặc định'; En='Reset defaults' }
+    @{ Vi='Bật màu'; En='Use colors' }
+    @{ Vi='Chế độ ASCII dự phòng'; En='ASCII fallback' }
+    @{ Vi='Số ngày giữ nhật ký'; En='Log retention days' }
+    @{ Vi='Tuổi file TEMP mặc định'; En='Default TEMP file age' }
+    @{ Vi='Tuổi log mặc định'; En='Default log age' }
+    @{ Vi='Tự động tạo Restore Point'; En='Automatic Restore Point' }
+    @{ Vi='Đang tải'; En='Downloading' }
+    @{ Vi='Đã tải xong'; En='Download complete' }
+
+
+    @{ Vi='Đã tìm thấy Restore Point trong 24 giờ gần nhất.'; En='A Restore Point from within the last 24 hours was found.' }
+    @{ Vi='Không tạo được Restore Point: '; En='Could not create Restore Point: ' }
+    @{ Vi='Không bật/xác nhận được System Restore: '; En='Could not enable/verify System Restore: ' }
+    @{ Vi='Đã tạo Restore Point: '; En='Created Restore Point: ' }
+    @{ Vi='Đã gỡ: '; En='Removed: ' }
+    @{ Vi='Thất bại: '; En='Failed: ' }
+    @{ Vi='Đã lưu cấu hình.'; En='Configuration saved.' }
+    @{ Vi='Không thể mở thư mục '; En='Could not open folder ' }
+    @{ Vi='Bỏ qua thư mục không truy cập được '; En='Skipped inaccessible directory ' }
+    @{ Vi='Đường dẫn không hợp lệ, bỏ qua '; En='Invalid path, skipped ' }
+    @{ Vi='Phát hiện file ngoài thư mục gốc, bỏ qua: '; En='File outside root directory detected, skipped: ' }
+    @{ Vi='Không xóa được '; En='Could not delete ' }
+    @{ Vi='ĐÃ XÓA ['; En='DELETED [' }
+    @{ Vi='Không dọn được Delivery Optimization cache: '; En='Could not clean Delivery Optimization cache: ' }
+    @{ Vi='DISM trả về mã '; En='DISM returned code ' }
+    @{ Vi='DISM thất bại: '; En='DISM failed: ' }
+    @{ Vi='Không thể dừng dịch vụ Windows Update/BITS: '; En='Could not stop Windows Update/BITS services: ' }
+    @{ Vi='Đã khởi động lại dịch vụ '; En='Restarted service ' }
+    @{ Vi='Không khởi động lại được dịch vụ '; En='Could not restart service ' }
+    @{ Vi='Không thể tải cấu hình bloatware'; En='Could not load bloatware configuration' }
+
+    @{ Vi='  [1] Dọn dẹp nhanh'; En='  [1] Quick Cleanup' }
+    @{ Vi='  [2] Dọn dẹp tùy chỉnh'; En='  [2] Custom Cleanup' }
+    @{ Vi='  [3] Gỡ ứng dụng rác / Trình gỡ ứng dụng'; En='  [3] Bloatware / App Uninstaller' }
+    @{ Vi='  [4] Dọn dẹp Windows Update & Thành phần hệ thống'; En='  [4] Windows Update & Component Cleanup' }
+    @{ Vi='  [5] Công cụ sửa chữa hệ thống'; En='  [5] System Repair Tools' }
+    @{ Vi='  [6] Báo cáo & Nhật ký'; En='  [6] Reports & Logs' }
+    @{ Vi='  [7] Cài đặt'; En='  [7] Settings' }
+    @{ Vi='  [0] Thoát'; En='  [0] Exit' }
+    @{ Vi='[0] Quay lại'; En='[0] Back' }
+    @{ Vi='[0] Thoát'; En='[0] Exit' }
+    @{ Vi='[1] Chỉ tài khoản hiện tại'; En='[1] Only current user' }
+    @{ Vi='[2] Tất cả tài khoản'; En='[2] All Users' }
+    @{ Vi='[1] Phân tích Component Store (DISM /AnalyzeComponentStore)'; En='[1] Analyze Component Store (DISM /AnalyzeComponentStore)' }
+    @{ Vi='[2] Dọn Component Store (DISM /StartComponentCleanup)'; En='[2] Clean Component Store (DISM /StartComponentCleanup)' }
+    @{ Vi='[3] Dọn Delivery Optimization Cache'; En='[3] Clean Delivery Optimization Cache' }
+    @{ Vi='[4] Dọn Windows Update Download Cache (SÂU)'; En='[4] Clean Windows Update Download Cache (DEEP)' }
+    @{ Vi='[1] DISM /CheckHealth'; En='[1] DISM /CheckHealth' }
+    @{ Vi='[2] DISM /ScanHealth'; En='[2] DISM /ScanHealth' }
+    @{ Vi='[3] DISM /RestoreHealth'; En='[3] DISM /RestoreHealth' }
+    @{ Vi='[4] SFC /Scannow'; En='[4] SFC /Scannow' }
+    @{ Vi='[5] CHKDSK /Scan'; En='[5] CHKDSK /Scan' }
+    @{ Vi='[6] Xóa bộ nhớ đệm DNS'; En='[6] Flush DNS Cache' }
+    @{ Vi='[7] Đặt lại bộ nhớ đệm Microsoft Store'; En='[7] Reset Microsoft Store Cache' }
+    @{ Vi='[1] Mở thư mục Logs'; En='[1] Open Logs folder' }
+    @{ Vi='[2] Mở thư mục Reports'; En='[2] Open Reports folder' }
+    @{ Vi='[3] Mở nhật ký mới nhất'; En='[3] Open latest log' }
+)
+
+function Get-LocalizedText {
+    param(
+        [AllowEmptyString()]
+        [string]$Text
+    )
+
+    if ($null -eq $Text -or $Text.Length -eq 0) {
+        return $Text
+    }
+
+    $Result = $Text
+
+    foreach ($Pair in $script:LocalizationPairs) {
+        $From = if ($script:Language -eq 'en') { [string]$Pair.Vi } else { [string]$Pair.En }
+        $To   = if ($script:Language -eq 'en') { [string]$Pair.En } else { [string]$Pair.Vi }
+
+        if ($Result -eq $From) {
+            return $To
+        }
+    }
+
+    foreach ($Pair in $script:LocalizationPairs) {
+        $From = if ($script:Language -eq 'en') { [string]$Pair.Vi } else { [string]$Pair.En }
+        $To   = if ($script:Language -eq 'en') { [string]$Pair.En } else { [string]$Pair.Vi }
+
+        if ($From.Length -gt 1 -and $Result.Contains($From)) {
+            $Result = $Result.Replace($From, $To)
+        }
+    }
+
+    return $Result
+}
 
 $script:ProtectedAppxPatterns = @(
     'Microsoft.WindowsStore',
@@ -183,7 +493,8 @@ function Write-Log {
         [switch]$SilentConsole
     )
 
-    $Line = '[{0}] [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
+    $LocalizedMessage = Get-LocalizedText $Message
+    $Line = '[{0}] [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $LocalizedMessage
     if ($script:LogPath) {
         Add-Content -LiteralPath $script:LogPath -Value $Line -Encoding UTF8
     }
@@ -288,11 +599,12 @@ function Write-UiText {
         [ConsoleColor]$Color = [ConsoleColor]::Gray,
         [switch]$NoNewline
     )
+    $LocalizedText = Get-LocalizedText $Text
     if ($script:UseColor) {
-        Write-Host $Text -ForegroundColor $Color -NoNewline:$NoNewline
+        Write-Host $LocalizedText -ForegroundColor $Color -NoNewline:$NoNewline
     }
     else {
-        Write-Host $Text -NoNewline:$NoNewline
+        Write-Host $LocalizedText -NoNewline:$NoNewline
     }
 }
 
@@ -319,10 +631,13 @@ function Show-Banner {
     }
     catch { }
 
-    Write-UiText ($C.TL + $Line + $C.TR) -Color Cyan
-    Write-UiText ($C.V + ('{0,-64}' -f (' ' + $Title)) + $C.V) -Color Cyan
+    $LocalizedTitle = Get-LocalizedText $Title
     $LangText = if ($script:Language -eq 'en') { 'English' } else { 'Tiếng Việt' }
-    Write-UiText ($C.V + ('{0,-64}' -f (' Version ' + $script:ScriptVersion + ' | ' + $OsText + ' | ' + $LangText)) + $C.V) -Color Cyan
+    $VersionText = if ($script:Language -eq 'en') { 'Version' } else { 'Phiên bản' }
+
+    Write-UiText ($C.TL + $Line + $C.TR) -Color Cyan
+    Write-UiText ($C.V + ('{0,-64}' -f (' ' + $LocalizedTitle)) + $C.V) -Color Cyan
+    Write-UiText ($C.V + ('{0,-64}' -f (' ' + $VersionText + ' ' + $script:ScriptVersion + ' | ' + $OsText + ' | ' + $LangText)) + $C.V) -Color Cyan
     Write-UiText ($C.BL + $Line + $C.BR) -Color Cyan
 }
 
@@ -336,7 +651,16 @@ function Show-StatusBar {
     }
     catch { $Restore = 'Unavailable' }
 
-    Write-UiText ("Mode: {0} | Free C: {1} | Restore Point: {2}" -f $Mode, $CFree, $Restore) -Color DarkGray
+    $ModeText = Get-LocalizedText $Mode
+    $CFreeLabel = if ($script:Language -eq 'en') { 'Free C' } else { 'Trống C' }
+    $RestoreLabel = if ($script:Language -eq 'en') { 'Restore Point' } else { 'Điểm khôi phục' }
+    $Status = if ($script:Language -eq 'en') {
+        "Mode: {0} | {1}: {2} | {3}: {4}" -f $ModeText, $CFreeLabel, $CFree, $RestoreLabel, (Get-LocalizedText $Restore)
+    } else {
+        "Chế độ: {0} | {1}: {2} | {3}: {4}" -f $ModeText, $CFreeLabel, $CFree, $RestoreLabel, (Get-LocalizedText $Restore)
+    }
+
+    Write-UiText $Status -Color DarkGray
     Write-Host ''
 }
 
@@ -356,7 +680,13 @@ function Confirm-YesNo {
     )
     while ($true) {
         Write-Host ''
-        Write-UiText ($Message + (' [Y/N, default {0}]' -f $Default)) -Color Yellow
+        $LocalizedMessage = Get-LocalizedText $Message
+        $Suffix = if ($script:Language -eq 'en') {
+            ' [Y/N, default {0}]' -f $Default
+        } else {
+            ' [Y/N, mặc định {0}]' -f $Default
+        }
+        Write-UiText ($LocalizedMessage + $Suffix) -Color Yellow
         $Key = Read-UiKey
         if (-not $Key) { return ($Default -eq 'Y') }
         switch ($Key.Key) {
@@ -370,7 +700,7 @@ function Confirm-YesNo {
 function Wait-ForKey {
     param([string]$Message = 'Nhấn phím bất kỳ để quay lại...')
     Write-Host ''
-    Write-UiText $Message -Color DarkGray
+    Write-UiText (Get-LocalizedText $Message) -Color DarkGray
     [void](Read-UiKey)
 }
 
@@ -394,7 +724,10 @@ function Invoke-ChecklistMenu {
             $Pointer = if ($i -eq $Index) { '>' } else { ' ' }
             $Risk = if ($Item.PSObject.Properties.Name -contains 'Risk') { $Item.Risk } else { 'LOW' }
             $Estimate = if ($Item.PSObject.Properties.Name -contains 'Estimate') { $Item.Estimate } else { '' }
-            $Line = '{0} {1} {2,-34} [{3,-6}] {4}' -f $Pointer, $Marker, $Item.Label, $Risk, $Estimate
+            $DisplayLabel = Get-LocalizedText ([string]$Item.Label)
+            $DisplayRisk = Get-LocalizedText ([string]$Risk)
+            $DisplayEstimate = Get-LocalizedText ([string]$Estimate)
+            $Line = '{0} {1} {2,-34} [{3,-6}] {4}' -f $Pointer, $Marker, $DisplayLabel, $DisplayRisk, $DisplayEstimate
             $Color = if ($Item.Selected) { [ConsoleColor]::Green } else { [ConsoleColor]::Gray }
             if ($Risk -eq 'HIGH') { $Color = [ConsoleColor]::Red }
             elseif ($Risk -eq 'MEDIUM' -and $Item.Selected) { $Color = [ConsoleColor]::Yellow }
@@ -402,7 +735,7 @@ function Invoke-ChecklistMenu {
         }
 
         Write-Host ''
-        Write-UiText $Footer -Color DarkGray
+        Write-UiText (Get-LocalizedText $Footer) -Color DarkGray
         $Key = Read-UiKey
         if (-not $Key) { return $null }
 
@@ -425,16 +758,16 @@ function Show-MainMenu {
         $Mode = if ($script:CurrentResult -and $script:CurrentResult.Mode) { $script:CurrentResult.Mode } else { 'DRY-RUN' }
         Show-StatusBar -Mode $Mode
 
-        Write-UiText '  [1] Quick Cleanup' -Color Green
-        Write-UiText '  [2] Custom Cleanup' -Color Cyan
-        Write-UiText '  [3] Bloatware / App Uninstaller' -Color Yellow
-        Write-UiText '  [4] Windows Update & Component Cleanup' -Color Cyan
-        Write-UiText '  [5] System Repair Tools' -Color Magenta
-        Write-UiText '  [6] Reports & Logs' -Color Gray
-        Write-UiText '  [7] Settings' -Color Gray
-        Write-UiText '  [0] Exit' -Color Red
+        Write-UiText (Get-LocalizedText '  [1] Quick Cleanup') -Color Green
+        Write-UiText (Get-LocalizedText '  [2] Custom Cleanup') -Color Cyan
+        Write-UiText (Get-LocalizedText '  [3] Bloatware / App Uninstaller') -Color Yellow
+        Write-UiText (Get-LocalizedText '  [4] Windows Update & Component Cleanup') -Color Cyan
+        Write-UiText (Get-LocalizedText '  [5] System Repair Tools') -Color Magenta
+        Write-UiText (Get-LocalizedText '  [6] Reports & Logs') -Color Gray
+        Write-UiText (Get-LocalizedText '  [7] Settings') -Color Gray
+        Write-UiText (Get-LocalizedText '  [0] Exit') -Color Red
         Write-Host ''
-        Write-UiText 'Chọn số hoặc dùng mũi tên + Enter: ' -Color White -NoNewline
+        Write-UiText (Get-LocalizedText 'Chọn số hoặc dùng mũi tên + Enter: ') -Color White -NoNewline
 
         $Key = Read-UiKey
         if (-not $Key) { return }
@@ -658,7 +991,7 @@ function Show-ScanSummary {
     Show-Banner -Title $Title
     Write-Host ''
     if ($ScanResult.Summaries.Count -eq 0) {
-        Write-UiText 'Không có dữ liệu quét.' -Color Yellow
+        Write-UiText (Get-LocalizedText 'Không có dữ liệu quét.') -Color Yellow
     }
     else {
         foreach ($Summary in $ScanResult.Summaries) {
@@ -764,7 +1097,7 @@ function Invoke-DismComponentCleanup {
     }
 
     Write-Host ''
-    Write-UiText 'Đang chạy DISM Component Cleanup...' -Color Cyan
+    Write-UiText (Get-LocalizedText 'Đang chạy DISM Component Cleanup...') -Color Cyan
     try {
         $Output = & $DismPath /Online /Cleanup-Image /StartComponentCleanup 2>&1
         $Code = $LASTEXITCODE
@@ -863,7 +1196,7 @@ function Invoke-CleanupOperation {
 
     Clear-Ui
     Show-Banner -Title ("{0} - {1}" -f $Title, $Mode)
-    Write-UiText 'Đang quét, vui lòng chờ...' -Color Cyan
+    Write-UiText (Get-LocalizedText 'Đang quét, vui lòng chờ...') -Color Cyan
     $ScanResult = Scan-CleanupTargets -SelectedIds $FileIds
     $script:CurrentResult.CandidateFiles = $ScanResult.CandidateFiles
     $script:CurrentResult.CandidateBytes = $ScanResult.CandidateBytes
@@ -873,10 +1206,10 @@ function Invoke-CleanupOperation {
     Write-Host ''
 
     if ($IsDryRun) {
-        Write-UiText 'DRY-RUN: chưa có dữ liệu nào bị xóa.' -Color Cyan
+        Write-UiText (Get-LocalizedText 'DRY-RUN: chưa có dữ liệu nào bị xóa.') -Color Cyan
         if ($TaskIds.Count -gt 0) {
             Write-Host ''
-            Write-UiText 'Các tác vụ hệ thống đã chọn:' -Color Yellow
+            Write-UiText (Get-LocalizedText 'Các tác vụ hệ thống đã chọn:') -Color Yellow
             foreach ($TaskId in $TaskIds) { Write-Host ('  - {0}' -f (Find-TargetById -Id $TaskId).Label) }
         }
         Wait-ForKey
@@ -891,7 +1224,7 @@ function Invoke-CleanupOperation {
     }
 
     Write-Host ''
-    Write-UiText 'Đang dọn dẹp...' -Color Green
+    Write-UiText (Get-LocalizedText 'Đang dọn dẹp...') -Color Green
     $GeneralFiles = @($ScanResult.Files | Where-Object { $_.TargetId -ne 'WindowsUpdateDownload' })
     $GeneralScan = [pscustomobject]@{ Files = $GeneralFiles }
     $DeleteResult = Invoke-FileDeletion -ScanResult $GeneralScan
@@ -949,11 +1282,11 @@ function Invoke-QuickCleanupWizard {
     Clear-Ui
     Show-Banner -Title 'QUICK CLEANUP'
     Write-Host ''
-    Write-UiText 'Preset an toàn: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.' -Color Gray
+    Write-UiText (Get-LocalizedText 'Preset an toàn: TEMP, Shader Cache, WER, Crash Dumps, Delivery Optimization, Component Store, Recycle Bin.') -Color Gray
     Write-Host ''
-    Write-UiText '[1] Xem trước (Dry-Run)' -Color Cyan
-    Write-UiText '[2] Dọn thật' -Color Green
-    Write-UiText '[0] Quay lại' -Color Red
+    Write-UiText (Get-LocalizedText '[1] Xem trước (Dry-Run)') -Color Cyan
+    Write-UiText (Get-LocalizedText '[2] Dọn thật') -Color Green
+    Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
 
     $Key = Read-UiKey
     if (-not $Key) { return }
@@ -982,7 +1315,7 @@ function Invoke-CustomCleanupWizard {
     if ($SelectedIds.Count -eq 0) {
         Clear-Ui
         Show-Banner -Title 'CUSTOM CLEANUP'
-        Write-UiText 'Bạn chưa chọn mục nào.' -Color Yellow
+        Write-UiText (Get-LocalizedText 'Bạn chưa chọn mục nào.') -Color Yellow
         Wait-ForKey
         return
     }
@@ -991,9 +1324,9 @@ function Invoke-CustomCleanupWizard {
     Show-Banner -Title 'CUSTOM CLEANUP'
     Write-UiText ('Đã chọn {0} mục.' -f $SelectedIds.Count) -Color Green
     Write-Host ''
-    Write-UiText '[1] Dry-Run' -Color Cyan
-    Write-UiText '[2] Execute' -Color Green
-    Write-UiText '[0] Back' -Color Red
+    Write-UiText (Get-LocalizedText '[1] Dry-Run') -Color Cyan
+    Write-UiText (Get-LocalizedText '[2] Execute') -Color Green
+    Write-UiText (Get-LocalizedText '[0] Back') -Color Red
 
     $Key = Read-UiKey
     if (-not $Key) { return }
@@ -1018,10 +1351,12 @@ function Invoke-CustomCleanupWizard {
 # ============================================================
 
 function Get-BloatwareAllowlist {
-    if (Test-Path -LiteralPath $script:BloatwarePath -PathType Leaf) {
-        $Data = Load-JsonFile -Path $script:BloatwarePath
-        if ($Data -and $Data.Apps) {
-            return @($Data.Apps | ForEach-Object { [string]$_ })
+    foreach ($Path in @($script:BloatwarePath, $script:LegacyBloatwarePath)) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $Data = Load-JsonFile -Path $Path
+            if ($Data -and $Data.Apps) {
+                return @($Data.Apps | ForEach-Object { [string]$_ })
+            }
         }
     }
     return @($script:EmbeddedBloatware)
@@ -1117,9 +1452,9 @@ function New-CleanupRestorePoint {
 function Invoke-BloatwareMenu {
     Clear-Ui
     Show-Banner -Title 'BLOATWARE / APP UNINSTALLER'
-    Write-UiText '[1] Chỉ tài khoản hiện tại' -Color Cyan
-    Write-UiText '[2] Tất cả tài khoản (All Users)' -Color Yellow
-    Write-UiText '[0] Quay lại' -Color Red
+    Write-UiText (Get-LocalizedText '[1] Chỉ tài khoản hiện tại') -Color Cyan
+    Write-UiText (Get-LocalizedText '[2] Tất cả tài khoản (All Users)') -Color Yellow
+    Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
     $Key = Read-UiKey
     if (-not $Key) { return }
 
@@ -1132,7 +1467,7 @@ function Invoke-BloatwareMenu {
     if ($Candidates.Count -eq 0) {
         Clear-Ui
         Show-Banner -Title 'BLOATWARE'
-        Write-UiText 'Không tìm thấy Appx nào trong allowlist có thể gỡ.' -Color Yellow
+        Write-UiText (Get-LocalizedText 'Không tìm thấy Appx nào trong allowlist có thể gỡ.') -Color Yellow
         Wait-ForKey
         return
     }
@@ -1149,7 +1484,7 @@ function Invoke-BloatwareMenu {
     Write-Host ''
     foreach ($App in $Chosen) { Write-UiText ("  - {0}" -f $App.Label) -Color Gray }
     Write-Host ''
-    Write-UiText 'Restore Point sẽ được tạo trước khi gỡ.' -Color Cyan
+    Write-UiText (Get-LocalizedText 'Restore Point sẽ được tạo trước khi gỡ.') -Color Cyan
 
     if (-not (Confirm-YesNo -Message 'Tiếp tục gỡ các ứng dụng đã chọn?' -Default 'N')) { return }
     if (-not (New-CleanupRestorePoint)) {
@@ -1200,11 +1535,11 @@ function Invoke-WindowsUpdateMenu {
     while ($true) {
         Clear-Ui
         Show-Banner -Title 'WINDOWS UPDATE & COMPONENT CLEANUP'
-        Write-UiText '[1] Phân tích Component Store (DISM /AnalyzeComponentStore)' -Color Cyan
-        Write-UiText '[2] Dọn Component Store (DISM /StartComponentCleanup)' -Color Green
-        Write-UiText '[3] Dọn Delivery Optimization Cache' -Color Cyan
-        Write-UiText '[4] Dọn Windows Update Download Cache (SÂU)' -Color Yellow
-        Write-UiText '[0] Quay lại' -Color Red
+        Write-UiText (Get-LocalizedText '[1] Phân tích Component Store (DISM /AnalyzeComponentStore)') -Color Cyan
+        Write-UiText (Get-LocalizedText '[2] Dọn Component Store (DISM /StartComponentCleanup)') -Color Green
+        Write-UiText (Get-LocalizedText '[3] Dọn Delivery Optimization Cache') -Color Cyan
+        Write-UiText (Get-LocalizedText '[4] Dọn Windows Update Download Cache (SÂU)') -Color Yellow
+        Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
 
         $Key = Read-UiKey
         if (-not $Key) { return }
@@ -1229,11 +1564,11 @@ function Invoke-DismAnalyze {
     Show-Banner -Title 'ANALYZE COMPONENT STORE'
     $DismPath = Join-Path $env:WINDIR 'System32\dism.exe'
     if (-not (Test-Path -LiteralPath $DismPath -PathType Leaf)) {
-        Write-UiText 'Không tìm thấy DISM.' -Color Red
+        Write-UiText (Get-LocalizedText 'Không tìm thấy DISM.') -Color Red
         Wait-ForKey
         return
     }
-    Write-UiText 'Đang phân tích...' -Color Cyan
+    Write-UiText (Get-LocalizedText 'Đang phân tích...') -Color Cyan
     try {
         $Output = & $DismPath /Online /Cleanup-Image /AnalyzeComponentStore 2>&1
         foreach ($Line in $Output) { if ($Line -ne $null) { Write-Log ("DISM: {0}" -f [string]$Line) 'INFO' -SilentConsole } }
@@ -1249,8 +1584,8 @@ function Invoke-DismAnalyze {
 function Invoke-DeepWindowsUpdateWizard {
     Clear-Ui
     Show-Banner -Title 'WINDOWS UPDATE DOWNLOAD CACHE - SÂU'
-    Write-UiText 'CẢNH BÁO: các bản cập nhật đã tải nhưng chưa cài có thể phải tải lại.' -Color Yellow
-    Write-UiText 'Dịch vụ BITS và Windows Update sẽ được dừng tạm thời.' -Color Yellow
+    Write-UiText (Get-LocalizedText 'CẢNH BÁO: các bản cập nhật đã tải nhưng chưa cài có thể phải tải lại.') -Color Yellow
+    Write-UiText (Get-LocalizedText 'Dịch vụ BITS và Windows Update sẽ được dừng tạm thời.') -Color Yellow
     Write-Host ''
     if (-not (Confirm-YesNo -Message 'Tiếp tục dọn cache sâu?' -Default 'N')) { return }
 
@@ -1307,14 +1642,14 @@ function Invoke-SystemRepairMenu {
     while ($true) {
         Clear-Ui
         Show-Banner -Title 'SYSTEM REPAIR TOOLS'
-        Write-UiText '[1] DISM /CheckHealth' -Color Cyan
-        Write-UiText '[2] DISM /ScanHealth' -Color Cyan
-        Write-UiText '[3] DISM /RestoreHealth' -Color Yellow
-        Write-UiText '[4] SFC /Scannow' -Color Yellow
-        Write-UiText '[5] CHKDSK /Scan' -Color Cyan
-        Write-UiText '[6] Flush DNS Cache' -Color Cyan
-        Write-UiText '[7] Reset Microsoft Store Cache' -Color Cyan
-        Write-UiText '[0] Quay lại' -Color Red
+        Write-UiText (Get-LocalizedText '[1] DISM /CheckHealth') -Color Cyan
+        Write-UiText (Get-LocalizedText '[2] DISM /ScanHealth') -Color Cyan
+        Write-UiText (Get-LocalizedText '[3] DISM /RestoreHealth') -Color Yellow
+        Write-UiText (Get-LocalizedText '[4] SFC /Scannow') -Color Yellow
+        Write-UiText (Get-LocalizedText '[5] CHKDSK /Scan') -Color Cyan
+        Write-UiText (Get-LocalizedText '[6] Flush DNS Cache') -Color Cyan
+        Write-UiText (Get-LocalizedText '[7] Reset Microsoft Store Cache') -Color Cyan
+        Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
 
         $Key = Read-UiKey
         if (-not $Key) { return }
@@ -1332,8 +1667,8 @@ function Invoke-SystemRepairMenu {
             'NumPad4' { if (Confirm-YesNo -Message 'SFC /Scannow sẽ kiểm tra file hệ thống. Tiếp tục?' -Default 'N') { Invoke-NativeRepairCommand -DisplayName 'SFC Scannow' -FilePath $SfcPath -ArgumentList @('/scannow') } }
             'D5' { Invoke-NativeRepairCommand -DisplayName 'CHKDSK Scan' -FilePath $ChkPath -ArgumentList @($env:SystemDrive,'/scan') }
             'NumPad5' { Invoke-NativeRepairCommand -DisplayName 'CHKDSK Scan' -FilePath $ChkPath -ArgumentList @($env:SystemDrive,'/scan') }
-            'D6' { Clear-DnsClientCache ; Write-UiText 'Đã flush DNS cache.' -Color Green ; Wait-ForKey }
-            'NumPad6' { Clear-DnsClientCache ; Write-UiText 'Đã flush DNS cache.' -Color Green ; Wait-ForKey }
+            'D6' { Clear-DnsClientCache ; Write-UiText (Get-LocalizedText 'Đã flush DNS cache.') -Color Green ; Wait-ForKey }
+            'NumPad6' { Clear-DnsClientCache ; Write-UiText (Get-LocalizedText 'Đã flush DNS cache.') -Color Green ; Wait-ForKey }
             'D7' { Start-Process -FilePath 'wsreset.exe' -Wait ; Wait-ForKey }
             'NumPad7' { Start-Process -FilePath 'wsreset.exe' -Wait ; Wait-ForKey }
             'D0' { return }
@@ -1373,10 +1708,10 @@ function Invoke-ReportsMenu {
         Write-UiText ('Reports JSON gần nhất: {0}' -f $Reports.Count) -Color Cyan
         foreach ($File in $Reports) { Write-UiText ("  - {0} | {1}" -f $File.Name, $File.LastWriteTime) -Color Gray }
         Write-Host ''
-        Write-UiText '[1] Mở thư mục Logs' -Color Green
-        Write-UiText '[2] Mở thư mục Reports' -Color Green
-        Write-UiText '[3] Mở log mới nhất' -Color Cyan
-        Write-UiText '[0] Quay lại' -Color Red
+        Write-UiText (Get-LocalizedText '[1] Mở thư mục Logs') -Color Green
+        Write-UiText (Get-LocalizedText '[2] Mở thư mục Reports') -Color Green
+        Write-UiText (Get-LocalizedText '[3] Mở log mới nhất') -Color Cyan
+        Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
 
         $Key = Read-UiKey
         if (-not $Key) { return }
@@ -1408,11 +1743,12 @@ function Invoke-SettingsMenu {
         Write-UiText ("[4] DefaultTempAgeDays  = {0}" -f $script:Settings.DefaultTempAgeDays) -Color Gray
         Write-UiText ("[5] DefaultLogAgeDays   = {0}" -f $script:Settings.DefaultLogAgeDays) -Color Gray
         Write-UiText ("[6] AutoRestorePoint    = {0}" -f $script:Settings.AutoRestorePoint) -Color Gray
-        Write-UiText ("[7] Language            = {0}" -f $script:Language) -Color Gray
+        $LanguageName = if ($script:Language -eq 'en') { 'English' } else { 'Tiếng Việt' }
+        Write-UiText ("[7] {0} = {1}" -f (Get-LocalizedText 'Ngôn ngữ'), $LanguageName) -Color Gray
         Write-Host ''
-        Write-UiText '[8] Lưu cấu hình' -Color Green
-        Write-UiText '[9] Reset mặc định' -Color Yellow
-        Write-UiText '[0] Quay lại' -Color Red
+        Write-UiText (Get-LocalizedText '[8] Lưu cấu hình') -Color Green
+        Write-UiText (Get-LocalizedText '[9] Reset mặc định') -Color Yellow
+        Write-UiText (Get-LocalizedText '[0] Quay lại') -Color Red
 
         $Key = Read-UiKey
         if (-not $Key) { return }
@@ -1421,12 +1757,12 @@ function Invoke-SettingsMenu {
             'NumPad1' { $script:Settings.UseColor = -not [bool]$script:Settings.UseColor; $script:UseColor = [bool]$script:Settings.UseColor }
             'D2' { $script:Settings.AsciiFallback = -not [bool]$script:Settings.AsciiFallback; $script:AsciiFallback = [bool]$script:Settings.AsciiFallback }
             'NumPad2' { $script:Settings.AsciiFallback = -not [bool]$script:Settings.AsciiFallback; $script:AsciiFallback = [bool]$script:Settings.AsciiFallback }
-            'D3' { $Value = Read-Host 'Nhập số ngày giữ log'; if ($Value -match '^\d+$') { $script:Settings.KeepLogsDays = [Math]::Max(1, [int]$Value) } }
-            'NumPad3' { $Value = Read-Host 'Nhập số ngày giữ log'; if ($Value -match '^\d+$') { $script:Settings.KeepLogsDays = [Math]::Max(1, [int]$Value) } }
-            'D4' { $Value = Read-Host 'Nhập tuổi file TEMP (ngày)'; if ($Value -match '^\d+$') { $script:Settings.DefaultTempAgeDays = [Math]::Max(0, [int]$Value) } }
-            'NumPad4' { $Value = Read-Host 'Nhập tuổi file TEMP (ngày)'; if ($Value -match '^\d+$') { $script:Settings.DefaultTempAgeDays = [Math]::Max(0, [int]$Value) } }
-            'D5' { $Value = Read-Host 'Nhập tuổi log (ngày)'; if ($Value -match '^\d+$') { $script:Settings.DefaultLogAgeDays = [Math]::Max(1, [int]$Value) } }
-            'NumPad5' { $Value = Read-Host 'Nhập tuổi log (ngày)'; if ($Value -match '^\d+$') { $script:Settings.DefaultLogAgeDays = [Math]::Max(1, [int]$Value) } }
+            'D3' { $Value = Read-Host (Get-LocalizedText 'Nhập số ngày giữ log'); if ($Value -match '^\d+$') { $script:Settings.KeepLogsDays = [Math]::Max(1, [int]$Value) } }
+            'NumPad3' { $Value = Read-Host (Get-LocalizedText 'Nhập số ngày giữ log'); if ($Value -match '^\d+$') { $script:Settings.KeepLogsDays = [Math]::Max(1, [int]$Value) } }
+            'D4' { $Value = Read-Host (Get-LocalizedText 'Nhập tuổi file TEMP (ngày)'); if ($Value -match '^\d+$') { $script:Settings.DefaultTempAgeDays = [Math]::Max(0, [int]$Value) } }
+            'NumPad4' { $Value = Read-Host (Get-LocalizedText 'Nhập tuổi file TEMP (ngày)'); if ($Value -match '^\d+$') { $script:Settings.DefaultTempAgeDays = [Math]::Max(0, [int]$Value) } }
+            'D5' { $Value = Read-Host (Get-LocalizedText 'Nhập tuổi log (ngày)'); if ($Value -match '^\d+$') { $script:Settings.DefaultLogAgeDays = [Math]::Max(1, [int]$Value) } }
+            'NumPad5' { $Value = Read-Host (Get-LocalizedText 'Nhập tuổi log (ngày)'); if ($Value -match '^\d+$') { $script:Settings.DefaultLogAgeDays = [Math]::Max(1, [int]$Value) } }
             'D6' { $script:Settings.AutoRestorePoint = -not [bool]$script:Settings.AutoRestorePoint }
             'NumPad6' { $script:Settings.AutoRestorePoint = -not [bool]$script:Settings.AutoRestorePoint }
             'D7' { $script:Language = if ($script:Language -eq 'vi') { 'en' } else { 'vi' }; $script:Settings.Language = $script:Language }
@@ -1470,27 +1806,27 @@ function Start-SafeWindowsCleanup {
         Initialize-Log
 
         if ($env:OS -ne 'Windows_NT') {
-            Write-Host 'Chỉ hỗ trợ Windows.' -ForegroundColor Red
+            Write-Host (Get-LocalizedText 'Chỉ hỗ trợ Windows.') -ForegroundColor Red
             return
         }
         if ($PSVersionTable.PSEdition -ne 'Desktop') {
-            Write-Host 'Hãy chạy bằng Windows PowerShell 5.1.' -ForegroundColor Red
+            Write-Host (Get-LocalizedText 'Hãy chạy bằng Windows PowerShell 5.1.') -ForegroundColor Red
             return
         }
         if (-not (Test-IsAdministrator)) {
-            Write-Host 'Hãy chạy bằng quyền Administrator.' -ForegroundColor Red
+            Write-Host (Get-LocalizedText 'Hãy chạy bằng quyền Administrator.') -ForegroundColor Red
             return
         }
 
         try {
             $OS = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
             if ([int]$OS.ProductType -ne 1 -or $OS.Caption -notmatch 'Windows (10|11)') {
-                Write-Host 'Chỉ hỗ trợ Windows 10/11 Desktop.' -ForegroundColor Red
+                Write-Host (Get-LocalizedText 'Chỉ hỗ trợ Windows 10/11 Desktop.') -ForegroundColor Red
                 return
             }
         }
         catch {
-            Write-Host ("Không xác minh được Windows: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            Write-Host (Get-LocalizedText ("Không xác minh được Windows: {0}" -f $_.Exception.Message)) -ForegroundColor Red
             return
         }
 
@@ -1502,7 +1838,7 @@ function Start-SafeWindowsCleanup {
     catch {
         Write-Log ("Lỗi nghiêm trọng: {0}" -f $_.Exception.Message) 'ERROR'
         Write-Host ''
-        Write-Host 'Đã xảy ra lỗi. Xem log để biết chi tiết.' -ForegroundColor Red
+        Write-Host (Get-LocalizedText 'Đã xảy ra lỗi. Xem log để biết chi tiết.') -ForegroundColor Red
         Wait-ForKey
     }
     finally {

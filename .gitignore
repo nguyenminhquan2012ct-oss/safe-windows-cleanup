@@ -1,7 +1,6 @@
-*.log
-*.tmp
+src/Logs/*
+src/Reports/*
+!src/Logs/.gitkeep
+!src/Reports/.gitkeep
 *.download
-src/Logs/*.txt
-src/Reports/*.json
-.vscode/
-.idea/
+*.tmp

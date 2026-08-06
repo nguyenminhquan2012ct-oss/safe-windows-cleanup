@@ -1,52 +1,49 @@
-# GitHub Remote Bootstrap Setup
+# GitHub Setup / Thiết lập GitHub
 
-## 1. Cấu trúc repository đề xuất
+## Tiếng Việt
 
-```text
-safe-windows-cleanup/
-├── bootstrap.ps1
-└── Safe-Windows-Cleanup-v3.1/
-    ├── Safe-Windows-Cleanup-v3.1.ps1
-    └── Config/
-        └── bloatware-list.json
-```
+Repository:
 
-## 2. Sửa bootstrap.ps1
+`https://github.com/nguyenminhquan2012ct-oss/safe-windows-cleanup`
 
-Thay:
+File bootstrap phải nằm ở root:
+
+`bootstrap.ps1`
+
+Sau khi push code:
 
 ```powershell
-$RepoOwner = '<GITHUB_OWNER>'
-$RepoName = '<GITHUB_REPO>'
+git add .
+git commit -m "Update Safe Windows Cleanup"
+git push origin main
 ```
 
-bằng tài khoản/repository GitHub thật.
-
-Ví dụ:
+Test:
 
 ```powershell
-$RepoOwner = 'khangabc'
-$RepoName = 'safe-windows-cleanup'
+irm https://raw.githubusercontent.com/nguyenminhquan2012ct-oss/safe-windows-cleanup/main/bootstrap.ps1 | iex
 ```
 
-## 3. Lệnh chạy một dòng
+## English
+
+Repository:
+
+`https://github.com/nguyenminhquan2012ct-oss/safe-windows-cleanup`
+
+The bootstrap must live at repository root:
+
+`bootstrap.ps1`
+
+After pushing changes:
 
 ```powershell
-irm https://raw.githubusercontent.com/<GITHUB_OWNER>/<GITHUB_REPO>/main/bootstrap.ps1 | iex
+git add .
+git commit -m "Update Safe Windows Cleanup"
+git push origin main
 ```
 
-## 4. Luồng chạy
+Test with:
 
-- Chọn ngôn ngữ.
-- Hiển thị TOS.
-- A để chấp nhận, D để từ chối.
-- Ghi nhận consent theo phiên bản TOS tại `%LOCALAPPDATA%\SafeWindowsCleanup\consent.json`.
-- Tải/cập nhật engine vào `%LOCALAPPDATA%\SafeWindowsCleanup`.
-- Tải `bloatware-list.json` nếu có.
-- Yêu cầu UAC Administrator.
-- Chạy engine với `-Language vi` hoặc `-Language en`.
-
-## 5. Lưu ý bảo mật
-
-`irm | iex` thực thi mã từ xa. Chỉ dùng với repository bạn kiểm soát.
-Nên pin tag/release cụ thể hoặc thêm kiểm tra SHA-256/chữ ký Authenticode trước khi đưa vào sử dụng rộng rãi.
+```powershell
+irm https://raw.githubusercontent.com/nguyenminhquan2012ct-oss/safe-windows-cleanup/main/bootstrap.ps1 | iex
+```

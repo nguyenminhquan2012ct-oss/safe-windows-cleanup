@@ -4,5 +4,6 @@
   "KeepLogsDays": 30,
   "DefaultTempAgeDays": 2,
   "DefaultLogAgeDays": 30,
-  "AutoRestorePoint": true
+  "AutoRestorePoint": true,
+  "Language": "vi"
 }
